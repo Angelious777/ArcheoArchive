@@ -1,0 +1,158 @@
+// ArcheoArchive · modelo de datos (Semana 2)
+// Base: modelo preliminar del informe (apartado 5.2), ampliado con los campos
+// del formato de catalogación cerámica recolectado por el estudiante.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Rol {
+  VISITANTE
+  ADMIN
+}
+
+enum EstadoPublicacion {
+  BORRADOR
+  PUBLICADO
+}
+
+/// Determina qué campos específicos se piden en el formulario (sección 2 del formato).
+enum CategoriaObjeto {
+  VASIJA // vasijas, incluidas las que tienen pitones, asas dobles o soportes
+  HERRAMIENTA // materias primas y herramientas de alfarería
+  ESCULTORICA // efigies, recipientes antropomorfos / zoomorfos
+}
+
+enum Tamano {
+  PEQUENO
+  MEDIANO
+  GRANDE
+  MUY_GRANDE
+}
+
+model Usuario {
+  id           String   @id @default(cuid())
+  nombre       String
+  correo       String   @unique
+  passwordHash String // hash bcrypt, nunca texto plano (RD-17)
+  rol          Rol      @default(VISITANTE)
+  creadoEn     DateTime @default(now())
+}
+
+/// Catálogo controlado (RD-03). No se puede eliminar si está en uso (RD-04).
+model Material {
+  id      Int     @id @default(autoincrement())
+  nombre  String  @unique
+  piezas  Pieza[]
+}
+
+/// Catálogo controlado (RD-03). No se puede eliminar si está en uso (RD-04).
+model Tipologia {
+  id      Int     @id @default(autoincrement())
+  nombre  String  @unique
+  piezas  Pieza[]
+}
+
+model Pieza {
+  id     String @id @default(cuid())
+  codigo String @unique // código de inventario irrepetible (RD-01)
+  nombre String
+
+  categoria CategoriaObjeto    @default(VASIJA)
+  estado    EstadoPublicacion  @default(BORRADOR) // RD-06
+
+  materialId  Int
+  material    Material  @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  tipologiaId Int
+  tipologia   Tipologia @relation(fields: [tipologiaId], references: [id], onDelete: Restrict)
+
+  // --- Identificación y contexto (opcionales: no se inventan, RD-05) ---
+  descripcion        String?
+  periodo            String? // período cronológico
+  estiloCultural     String?
+  procedencia        String?
+  estadoConservacion String?
+
+  // --- Morfología y dimensiones ---
+  formaGeneral     String?
+  formaFuncional   String?
+  equivalencias    String? // equivalencias lingüísticas (aym., que., ing.)
+  tamano           Tamano?
+  alturaMaxCm      Float?
+  alturaCuerpoCm   Float?
+  alturaCuelloCm   Float?
+  diametroBaseCm   Float?
+  diametroBordeCm  Float?
+  diametroMaxCm    Float?
+  grosorMm         Float?
+  pesoGr           Float?
+
+  // --- Tecnología y manufactura ---
+  pasta                String? // composición de la pasta e inclusiones
+  tecnicaFormacion     String?
+  tratamientoSuperficial String?
+  coccion              String?
+  simetrica            Boolean?
+
+  // --- Estructura y decoración ---
+  componentesEstructurales String?
+  formasSecundarias        String? // borde, labio, base
+  elementosAgregados       String? // asas, mangos, soportes, apéndices
+  coloresPigmentos         String? // colores y códigos Munsell
+  descripcionIconografica  String? // descripción literal/literaria
+
+  // --- Observaciones e historia de vida ---
+  marcasUso   String? // tiznados, manchas de fuego, sales, perforaciones
+  relaciones  String? // remisiones y referencias comparativas
+
+  // --- Campos condicionales ---
+  // HERRAMIENTA
+  tipoHerramienta       String?
+  materiaPrimaHerramienta String?
+  desgasteHerramienta   String?
+  // VASIJA con elementos complejos (pitones, asas dobles, soportes)
+  detalleElementosComplejos String?
+  // ESCULTORICA
+  representacionFigurativa String?
+
+  fotografias Fotografia[]
+  modelo3d    Modelo3D?
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@index([estado])
+  @@index([materialId])
+  @@index([tipologiaId])
+}
+
+model Fotografia {
+  id          String  @id @default(cuid())
+  piezaId     String
+  pieza       Pieza   @relation(fields: [piezaId], references: [id], onDelete: Cascade) // RD-15
+  archivoKey  String // referencia al archivo en el almacenamiento (RD-14)
+  mime        String
+  descripcion String?
+  orden       Int     @default(0)
+  creadoEn    DateTime @default(now())
+
+  @@index([piezaId])
+}
+
+model Modelo3D {
+  id         String @id @default(cuid())
+  piezaId    String @unique // 1 a 0..1 (RD-12)
+  pieza      Pieza  @relation(fields: [piezaId], references: [id], onDelete: Cascade) // RD-15
+  archivoKey String // referencia al archivo en el almacenamiento (RD-14)
+  formato    String @default("GLB")
+  /// Unidad declarada de las coordenadas del modelo (RD-13).
+  unidad     String @default("unidades del modelo")
+  /// Factor para convertir unidades del modelo a centímetros. NULL = sin escala física validada.
+  escalaValidada Float?
+  creadoEn   DateTime @default(now())
+}
